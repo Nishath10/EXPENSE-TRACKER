@@ -1,0 +1,219 @@
+import tkinter as tk
+from tkinter import ttk, messagebox
+import csv
+import os
+from collections import defaultdict
+import matplotlib.pyplot as plt
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+
+FILE_NAME = 'expenses.csv'
+
+class ExpenseTracker:
+    def __init__(self, root):
+        self.root = root
+        self.root.title("Expense Tracker")
+        self.expenses = self.load_expenses()
+
+        # Input Fields
+        self.date_var = tk.StringVar()
+        self.category_var = tk.StringVar()
+        self.amount_var = tk.StringVar()
+        self.desc_var = tk.StringVar()
+        self.search_var = tk.StringVar()
+
+        self.build_gui()
+        self.update_expense_list()
+
+    def build_gui(self):
+        # Form
+        form_frame = tk.Frame(self.root)
+        form_frame.pack(pady=10)
+
+        tk.Label(form_frame, text="Date (YYYY-MM-DD):").grid(row=0, column=0)
+        tk.Entry(form_frame, textvariable=self.date_var).grid(row=0, column=1)
+
+        tk.Label(form_frame, text="Category:").grid(row=1, column=0)
+        tk.Entry(form_frame, textvariable=self.category_var).grid(row=1, column=1)
+
+        tk.Label(form_frame, text="Description:").grid(row=2, column=0)
+        tk.Entry(form_frame, textvariable=self.desc_var).grid(row=2, column=1)
+
+        tk.Label(form_frame, text="Amount:").grid(row=3, column=0)
+        tk.Entry(form_frame, textvariable=self.amount_var).grid(row=3, column=1)
+
+        tk.Button(form_frame, text="Add Expense", command=self.add_expense).grid(row=4, column=0, columnspan=2, pady=5)
+        tk.Button(form_frame, text="Edit Expense", command=self.edit_expense).grid(row=5, column=0, pady=5)
+        tk.Button(form_frame, text="Save Changes", command=self.save_changes).grid(row=5, column=1, pady=5)
+        tk.Button(form_frame, text="Delete Expense", command=self.delete_expense).grid(row=6, column=0, columnspan=2, pady=5)
+
+        # Search Bar
+        search_frame = tk.Frame(self.root)
+        search_frame.pack(pady=5)
+        tk.Label(search_frame, text="Search:").pack(side=tk.LEFT)
+        tk.Entry(search_frame, textvariable=self.search_var).pack(side=tk.LEFT, padx=5)
+        tk.Button(search_frame, text="Search", command=self.search_expenses).pack(side=tk.LEFT)
+        tk.Button(search_frame, text="Reset", command=self.reset_search).pack(side=tk.LEFT)
+
+        # Expense List Table
+        self.tree = ttk.Treeview(self.root, columns=("ID", "Category", "Description", "Amount"), show="headings")
+        for col in ("ID", "Category", "Description", "Amount"):
+            self.tree.heading(col, text=col)
+            self.tree.column(col, width=100)
+        self.tree.pack(pady=10)
+
+        # Action Buttons
+        button_frame = tk.Frame(self.root)
+        button_frame.pack()
+        tk.Button(button_frame, text="Total & Category Summary", command=self.show_total_and_summary).pack(side=tk.LEFT, padx=5)
+        tk.Button(button_frame, text="Show Pie Chart", command=self.plot_category_pie).pack(side=tk.LEFT, padx=5)
+        tk.Button(button_frame, text="Save", command=self.save_expenses).pack(side=tk.LEFT, padx=5)
+
+        self.pie_chart_canvas = None
+
+    def load_expenses(self):
+        expenses = []
+        if os.path.exists(FILE_NAME):
+            with open(FILE_NAME, mode='r') as file:
+                reader = csv.reader(file)
+                next(reader, None)
+                for row in reader:
+                    if len(row) != 4:
+                        continue
+                    date, category, description, amount = row
+                    try:
+                        amount = float(amount)
+                    except ValueError:
+                        continue
+                    expenses.append({
+                        'date': date,
+                        'category': category,
+                        'description': description,
+                        'amount': amount
+                    })
+        return expenses
+
+    def save_expenses(self):
+        with open(FILE_NAME, mode='w', newline='') as file:
+            writer = csv.writer(file)
+            writer.writerow(['Date', 'Category', 'Description', 'Amount'])
+            for e in self.expenses:
+                writer.writerow([e['date'], e['category'], e['description'], e['amount']])
+        messagebox.showinfo("Success", "Expenses saved to file.")
+
+    def add_expense(self):
+        try:
+            new_expense = {
+                'date': self.date_var.get(),
+                'category': self.category_var.get(),
+                'description': self.desc_var.get(),
+                'amount': float(self.amount_var.get())
+            }
+            self.expenses.append(new_expense)
+            self.update_expense_list()
+            self.clear_form()
+            messagebox.showinfo("Success", "Expense added.")
+        except ValueError:
+            messagebox.showerror("Error", "Please enter a valid amount.")
+
+    def update_expense_list(self, filtered=None):
+        for item in self.tree.get_children():
+            self.tree.delete(item)
+        data = filtered if filtered is not None else self.expenses
+        for idx, e in enumerate(data, start=1):
+            self.tree.insert("", tk.END, values=(idx, e['category'], e['description'], f"₹{e['amount']:.2f}"))
+
+    def show_total_and_summary(self):
+        total = sum(e['amount'] for e in self.expenses)
+        total_message = f"Total Spent: ₹{total:.2f}\n\n"
+        summary = defaultdict(float)
+        for e in self.expenses:
+            summary[e['category']] += e['amount']
+        category_summary_message = "\n".join(f"{cat}: ₹{amt:.2f}" for cat, amt in summary.items())
+        message = total_message + (category_summary_message if category_summary_message else "No data.")
+        messagebox.showinfo("Total & Category Summary", message)
+
+    def plot_category_pie(self):
+        summary = defaultdict(float)
+        for e in self.expenses:
+            summary[e['category']] += e['amount']
+        if not summary:
+            messagebox.showwarning("No Data", "No data to plot.")
+            return
+        labels = list(summary.keys())
+        values = list(summary.values())
+        fig, ax = plt.subplots(figsize=(6, 6))
+        ax.pie(values, labels=labels, autopct='%1.1f%%', startangle=140)
+        ax.set_title("Expenses by Category")
+        ax.axis('equal')
+        if self.pie_chart_canvas:
+            self.pie_chart_canvas.get_tk_widget().destroy()
+        self.pie_chart_canvas = FigureCanvasTkAgg(fig, master=self.root)
+        self.pie_chart_canvas.draw()
+        self.pie_chart_canvas.get_tk_widget().pack(pady=10)
+
+    def edit_expense(self):
+        selected = self.tree.selection()
+        if not selected:
+            messagebox.showerror("Error", "Select an expense to edit.")
+            return
+        idx = int(self.tree.item(selected)['values'][0]) - 1
+        expense = self.expenses[idx]
+        self.date_var.set(expense['date'])
+        self.category_var.set(expense['category'])
+        self.desc_var.set(expense['description'])
+        self.amount_var.set(str(expense['amount']))
+
+    def save_changes(self):
+        selected = self.tree.selection()
+        if not selected:
+            messagebox.showerror("Error", "Select an expense to update.")
+            return
+        idx = int(self.tree.item(selected)['values'][0]) - 1
+        try:
+            self.expenses[idx] = {
+                'date': self.date_var.get(),
+                'category': self.category_var.get(),
+                'description': self.desc_var.get(),
+                'amount': float(self.amount_var.get())
+            }
+            self.save_expenses()
+            self.update_expense_list()
+            self.clear_form()
+            messagebox.showinfo("Success", "Expense updated.")
+        except ValueError:
+            messagebox.showerror("Error", "Please enter a valid amount.")
+
+    def delete_expense(self):
+        selected = self.tree.selection()
+        if not selected:
+            messagebox.showerror("Error", "Select an expense to delete.")
+            return
+        idx = int(self.tree.item(selected)['values'][0]) - 1
+        del self.expenses[idx]
+        self.save_expenses()
+        self.update_expense_list()
+        messagebox.showinfo("Deleted", "Expense deleted.")
+
+    def search_expenses(self):
+        query = self.search_var.get().lower()
+        filtered = [
+            e for e in self.expenses
+            if query in e['category'].lower() or query in e['description'].lower()
+        ]
+        self.update_expense_list(filtered)
+
+    def reset_search(self):
+        self.search_var.set("")
+        self.update_expense_list()
+
+    def clear_form(self):
+        self.date_var.set("")
+        self.category_var.set("")
+        self.desc_var.set("")
+        self.amount_var.set("")
+
+# Run the app
+if __name__ == '__main__':
+    root = tk.Tk()
+    app = ExpenseTracker(root)
+    root.mainloop()
